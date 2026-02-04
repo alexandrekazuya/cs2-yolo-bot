@@ -9,7 +9,7 @@ import pydirectinput
 import win32api
 import win32con
 from pynput import keyboard
-from config import MOVE_KEYS, MOVE_INTERVAL, AIM_SPEED, TOGGLE_HOTKEY
+from src.config import MOVE_KEYS, MOVE_INTERVAL, AIM_SPEED, TOGGLE_HOTKEY
 
 # Disable pydirectinput pause between actions
 pydirectinput.PAUSE = 0

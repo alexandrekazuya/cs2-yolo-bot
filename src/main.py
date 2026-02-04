@@ -8,13 +8,13 @@ import cv2
 import time
 from ultralytics import YOLO
 
-from config import (
+from src.config import (
     MODEL_PATH, CONF_THRESHOLD, WINDOW_TITLE, 
     SHOOT_COOLDOWN, HEADSHOT_OFFSET
 )
-from window_capture import find_window, capture_window, is_game_focused
-from controllers import HotkeyListener, MovementController, AimController
-from detection import get_closest_enemy
+from src.window_capture import find_window, capture_window, is_game_focused
+from src.controllers import HotkeyListener, MovementController, AimController
+from src.detection import get_closest_enemy
 
 
 def run_bot(
