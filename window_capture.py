@@ -47,10 +47,15 @@ def capture_window(hwnd):
     frame = np.frombuffer(bmp_str, dtype=np.uint8)
     frame = frame.reshape((bmp_info['bmHeight'], bmp_info['bmWidth'], 4))
     
-    win32gui.DeleteObject(bitmap.GetHandle())
-    save_dc.DeleteDC()
-    mfc_dc.DeleteDC()
-    win32gui.ReleaseDC(hwnd, hwnd_dc)
+    # Cleanup
+    try:
+        win32gui.DeleteObject(bitmap.GetHandle())
+        save_dc.DeleteDC()
+        mfc_dc.DeleteDC()
+    except Exception:
+        pass
+    finally:
+        win32gui.ReleaseDC(hwnd, hwnd_dc)
     
     import cv2
     frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
