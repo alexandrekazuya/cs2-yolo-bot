@@ -9,6 +9,10 @@ import mss
 import time
 from ultralytics import YOLO
 import argparse
+import win32gui
+import win32con
+import win32ui
+import ctypes
 
 
 # Screen capture region (adjust for your monitor/game window)
@@ -30,11 +34,67 @@ def get_capture_region(sct):
     }
 
 
+def find_window(window_title: str):
+    """Find a window by partial title match."""
+    result = []
+    
+    def enum_callback(hwnd, _):
+        if win32gui.IsWindowVisible(hwnd):
+            title = win32gui.GetWindowText(hwnd)
+            if window_title.lower() in title.lower():
+                result.append((hwnd, title))
+    
+    win32gui.EnumWindows(enum_callback, None)
+    return result
+
+
+def capture_window(hwnd):
+    """Capture a specific window by handle."""
+    # Get window dimensions
+    left, top, right, bottom = win32gui.GetClientRect(hwnd)
+    width = right - left
+    height = bottom - top
+    
+    if width == 0 or height == 0:
+        return None
+    
+    # Get window DC
+    hwnd_dc = win32gui.GetWindowDC(hwnd)
+    mfc_dc = win32ui.CreateDCFromHandle(hwnd_dc)
+    save_dc = mfc_dc.CreateCompatibleDC()
+    
+    # Create bitmap
+    bitmap = win32ui.CreateBitmap()
+    bitmap.CreateCompatibleBitmap(mfc_dc, width, height)
+    save_dc.SelectObject(bitmap)
+    
+    # Use PrintWindow for better compatibility with games
+    ctypes.windll.user32.PrintWindow(hwnd, save_dc.GetSafeHdc(), 3)
+    
+    # Convert to numpy array
+    bmp_info = bitmap.GetInfo()
+    bmp_str = bitmap.GetBitmapBits(True)
+    frame = np.frombuffer(bmp_str, dtype=np.uint8)
+    frame = frame.reshape((bmp_info['bmHeight'], bmp_info['bmWidth'], 4))
+    
+    # Cleanup
+    win32gui.DeleteObject(bitmap.GetHandle())
+    save_dc.DeleteDC()
+    mfc_dc.DeleteDC()
+    win32gui.ReleaseDC(hwnd, hwnd_dc)
+    
+    # Convert BGRA to BGR
+    frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+    
+    return frame
+
+
 def run_detection(
     model_path: str = "runs/detect/cs2_yolov8n/weights/best.pt",
-    conf_threshold: float = 0.5,
+    conf_threshold: float = 0.1,
     show_fps: bool = True,
     show_preview: bool = True,
+    window_title: str = None,
 ):
     """
     Run real-time detection on screen capture.
@@ -44,6 +104,7 @@ def run_detection(
         conf_threshold: Confidence threshold for detections
         show_fps: Show FPS counter on screen
         show_preview: Show detection preview window
+        window_title: Window title to capture (None for full screen)
     """
     # Load the trained model
     print(f"Loading model: {model_path}")
@@ -66,19 +127,35 @@ def run_detection(
     # FPS tracking
     fps_list = []
     
+    # Window capture mode
+    target_hwnd = None
+    if window_title:
+        windows = find_window(window_title)
+        if windows:
+            target_hwnd, found_title = windows[0]
+            print(f"Capturing window: {found_title}")
+        else:
+            print(f"Window '{window_title}' not found. Falling back to full screen.")
+    
     with mss.mss() as sct:
         region = get_capture_region(sct)
-        print(f"Capture region: {region['width']}x{region['height']}")
+        if not target_hwnd:
+            print(f"Capture region: {region['width']}x{region['height']}")
         
         while True:
             loop_start = time.perf_counter()
             
-            # Capture screen
-            screenshot = sct.grab(region)
-            frame = np.array(screenshot)
-            
-            # Convert BGRA to BGR
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+            # Capture screen or window
+            if target_hwnd:
+                frame = capture_window(target_hwnd)
+                if frame is None:
+                    print("Window closed or minimized.")
+                    break
+            else:
+                screenshot = sct.grab(region)
+                frame = np.array(screenshot)
+                # Convert BGRA to BGR
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
             
             # Run inference
             results = model(frame, conf=conf_threshold, verbose=False)
@@ -177,7 +254,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--conf",
         type=float,
-        default=0.5,
+        default=0.1,
         help="Confidence threshold",
     )
     parser.add_argument(
@@ -190,6 +267,12 @@ if __name__ == "__main__":
         action="store_true",
         help="Disable preview window",
     )
+    parser.add_argument(
+        "--window",
+        type=str,
+        default=None,
+        help="Window title to capture (partial match). Example: --window 'Counter-Strike'",
+    )
     
     args = parser.parse_args()
     
@@ -198,4 +281,5 @@ if __name__ == "__main__":
         conf_threshold=args.conf,
         show_fps=not args.no_fps,
         show_preview=not args.no_preview,
+        window_title=args.window,
     )
