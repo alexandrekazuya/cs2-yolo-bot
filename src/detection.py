@@ -1,9 +1,3 @@
-"""
-Detection utilities for CS2 Bot
-Helper functions for processing YOLO detections
-"""
-
-
 def get_closest_enemy(detections, screen_center_x, screen_center_y):
     """Find the enemy closest to crosshair (screen center)."""
     if not detections:

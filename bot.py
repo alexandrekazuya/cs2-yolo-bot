@@ -1,8 +1,3 @@
-"""
-Simple launcher for CS2 Bot
-Run with: python bot.py
-"""
-
 if __name__ == "__main__":
     from src.main import run_bot
     import argparse

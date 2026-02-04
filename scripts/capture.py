@@ -16,15 +16,7 @@ def capture_screenshots(
     capture_key: str = "c",
     quit_key: str = "q",
 ):
-    """
-    Capture screenshots for dataset collection.
-    
-    Args:
-        output_dir: Directory to save screenshots
-        capture_key: Key to press for capturing
-        quit_key: Key to press to quit
-    """
-    # Create output directory
+
     os.makedirs(output_dir, exist_ok=True)
     
     print("=" * 50)
