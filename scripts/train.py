@@ -16,6 +16,7 @@ def train(
     batch: int = 16,
     device: int = 0,
     name: str = "cs2_yolov8n",
+    resume: bool = False,
 ):
     """
     Train YOLOv8 on CS2 dataset.
@@ -54,10 +55,11 @@ def train(
         save=True,
         save_period=10,  # Save checkpoint every 10 epochs
         # Early stopping
-        patience=20,  # Stop if no improvement for 20 epochs
+        patience=10,  # Stop if no improvement for 20 epochs
         # Logging
         verbose=True,
         plots=True,
+        resume=resume,
     )
     
     print("\n" + "="*50)
@@ -77,6 +79,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch", type=int, default=16, help="Batch size")
     parser.add_argument("--device", type=int, default=0, help="GPU device")
     parser.add_argument("--name", type=str, default="cs2_yolov8n", help="Run name")
+    parser.add_argument("--resume", action="store_true", help="Resume training from checkpoint")
     
     args = parser.parse_args()
     
@@ -88,4 +91,5 @@ if __name__ == "__main__":
         batch=args.batch,
         device=args.device,
         name=args.name,
+        resume=args.resume,
     )

@@ -49,3 +49,7 @@ Press `c` to capture, `q` to quit.
 2. **Out of memory?** Reduce batch size: `--batch 8`
 3. **Slow detection?** Reduce confidence: `--conf 0.3`
 4. **Need more data?** Use `capture.py` and annotate on Roboflow
+
+Datasets used: 
+ - https://universe.roboflow.com/cs2-imagens-p-bot/myproject-cnbvt-oeadt (11k images)
+ - My own captures (1.6k images)

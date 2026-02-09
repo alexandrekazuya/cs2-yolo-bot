@@ -10,7 +10,8 @@ from ultralytics import YOLO
 
 from src.config import (
     MODEL_PATH, CONF_THRESHOLD, WINDOW_TITLE, 
-    SHOOT_COOLDOWN, HEADSHOT_OFFSET
+    SHOOT_COOLDOWN, BODY_OFFSET, HEAD_OFFSET, 
+    BODY_CLASSES, HEAD_CLASSES
 )
 from src.window_capture import find_window, capture_window, is_game_focused
 from src.controllers import HotkeyListener, MovementController, AimController
@@ -111,14 +112,26 @@ def run_bot(
             if bot_state['active'] and detections and game_focused:
                 target = get_closest_enemy(detections, width // 2, height // 2)
                 if target:
-                    target_x, target_y = target[0], target[1]
+                    # Unpack target data
+                    # (center_x, center_y, x1, y1, x2, y2, conf, cls_id)
+                    center_x, center_y, x1, y1, x2, y2, _, cls_id = target
+                    
+                    target_x = center_x
+                    target_y = center_y
+                    
+                    # If aiming at body, adjust vertical aim to head level
+                    if int(cls_id) in BODY_CLASSES:
+                        box_height = y2 - y1
+                        target_y = y1 + (box_height * BODY_OFFSET)
+                    elif int(cls_id) in HEAD_CLASSES:
+                        box_height = y2 - y1
+                        target_y = y1 + (box_height * HEAD_OFFSET)
                     
                     # Pause movement while aiming
                     movement.pause()
                     
-                    # Aim at target (aim at head area for headshots)
-                    aim_y = target_y - (target[5] - target[3]) * HEADSHOT_OFFSET
-                    aim.aim_at_target(target_x, aim_y)
+                    # Aim at target
+                    aim.aim_at_target(target_x, target_y)
                     
                     # Shoot only if cooldown has passed
                     if current_time - last_shot_time >= SHOOT_COOLDOWN:
@@ -146,7 +159,7 @@ def run_bot(
                 # Draw detections
                 for det in detections:
                     x1, y1, x2, y2, conf, cls_id = det
-                    color = (0, 0, 255) if cls_id == 0 else (0, 165, 255)
+                    color = (0, 0, 255) # Red for all enemies
                     cv2.rectangle(display, (x1, y1), (x2, y2), color, 2)
                     label = f"{class_names[cls_id]}: {conf:.2f}"
                     cv2.putText(display, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)

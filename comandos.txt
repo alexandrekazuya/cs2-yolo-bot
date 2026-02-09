@@ -1,0 +1,15 @@
+bot_kick;
+sv_cheats 1;
+mp_roundtime 60;
+mp_roundtime_defuse 60;
+mp_roundtime_hostage 60;
+mp_freezetime 0;
+buddha true;
+sv_regeneration_force_on true;
+mp_restartgame 1;
+
+
+
+solucao para cheese de andar para os lados e dar dodge,
+ver label anterior e comparar com o atual, se for diferente tiver a andar para o lado,
+meter um offset para esse lado para compensar (movement prediction)
