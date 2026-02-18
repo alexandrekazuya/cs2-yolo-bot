@@ -11,9 +11,9 @@ from ultralytics import YOLO
 from src.config import (
     MODEL_PATH, CONF_THRESHOLD, WINDOW_TITLE, 
     SHOOT_COOLDOWN, BODY_OFFSET, HEAD_OFFSET, 
-    BODY_CLASSES, HEAD_CLASSES
+    BODY_CLASSES, HEAD_CLASSES,
 )
-from src.window_capture import find_window, capture_window, is_game_focused
+from src.window_capture import find_window, capture_window, is_game_focused, cleanup_camera
 from src.controllers import HotkeyListener, MovementController, AimController
 from src.detection import get_closest_enemy
 
@@ -29,6 +29,7 @@ def run_bot(
     print(f"\nLoading model: {model_path}")
     
     model = YOLO(model_path)
+    model.to('cuda')
     class_names = model.names
     print(f"Classes: {class_names}")
     
@@ -80,19 +81,36 @@ def run_bot(
     
     fps_list = []
     last_shot_time = 0
-    
+    preview_frame_counter = 0
+    # Aim prediction state
+    prev_target_x = None
+    prev_target_time = None
+    velocity_x = 0.0
+    EMA_ALPHA = 0.7
+    LEAD_FACTOR = 4.1
+    MIN_VELOCITY = 50
+    direction_history = []  # Track velocity direction to detect oscillation
+    locked_direction = 0  # Locked prediction direction (+1/-1/0)
+    CONSISTENCY_FRAMES = 5  # Require N consistent direction frames before predicting
+    PREDICTION_RADIUS = 70
+
     try:
         while True:
             loop_start = time.perf_counter()
             
             # Capture frame
+            t0 = time.perf_counter()
             frame, _, _ = capture_window(target_hwnd)
+            t1 = time.perf_counter()
             if frame is None:
                 print("Window closed or minimized.")
                 break
             
             # Run detection
-            results = model(frame, conf=conf_threshold, verbose=False)
+            results = model(frame, conf=conf_threshold, verbose=False, half=True)
+            t2 = time.perf_counter()
+            capture_ms = (t1 - t0) * 1000
+            infer_ms = (t2 - t1) * 1000
             
             # Process detections
             detections = []
@@ -113,7 +131,6 @@ def run_bot(
                 target = get_closest_enemy(detections, width // 2, height // 2)
                 if target:
                     # Unpack target data
-                    # (center_x, center_y, x1, y1, x2, y2, conf, cls_id)
                     center_x, center_y, x1, y1, x2, y2, _, cls_id = target
                     
                     target_x = center_x
@@ -126,6 +143,41 @@ def run_bot(
                     elif int(cls_id) in HEAD_CLASSES:
                         box_height = y2 - y1
                         target_y = y1 + (box_height * HEAD_OFFSET)
+                    
+                    # --- Aim prediction: horizontal only ---
+                    if prev_target_x is not None and prev_target_time is not None:
+                        dt = current_time - prev_target_time
+                        if 0 < dt < 0.5:
+                            raw_vx = (center_x - prev_target_x) / dt
+                            velocity_x = EMA_ALPHA * raw_vx + (1 - EMA_ALPHA) * velocity_x
+                            
+                            # Track direction: +1 right, -1 left, 0 slow
+                            cur_dir = 0
+                            if abs(velocity_x) > MIN_VELOCITY:
+                                cur_dir = 1 if velocity_x > 0 else -1
+                            direction_history.append(cur_dir)
+                            if len(direction_history) > 6:
+                                direction_history.pop(0)
+                            
+                            # Lock direction once consistent, keep it until opposite is consistent
+                            recent = direction_history[-CONSISTENCY_FRAMES:]
+                            if len(recent) == CONSISTENCY_FRAMES and all(d == recent[0] and d != 0 for d in recent):
+                                locked_direction = recent[0]
+                            
+                            dist_from_center = abs(center_x - width // 2)
+                            predict_scale = max(0.0, 1.0 - dist_from_center / PREDICTION_RADIUS)
+                            
+                            # Predict using locked direction with current velocity magnitude
+                            if locked_direction != 0:
+                                lead_time = dt * LEAD_FACTOR * predict_scale
+                                target_x += abs(velocity_x) * locked_direction * lead_time
+                        else:
+                            velocity_x = 0.0
+                            direction_history.clear()
+                            locked_direction = 0
+                    
+                    prev_target_x = center_x
+                    prev_target_time = current_time
                     
                     # Pause movement while aiming
                     movement.pause()
@@ -140,16 +192,34 @@ def run_bot(
                 else:
                     # Resume movement if no valid target
                     movement.resume()
+                    prev_target_x = None
+                    prev_target_time = None
+                    velocity_x = 0.0
+                    direction_history.clear()
+                    locked_direction = 0
+                    
             else:
                 # Pause if bot inactive or game not focused, otherwise resume movement
                 if not bot_state['active'] or not game_focused:
                     movement.pause()
                 else:
-                    # Bot is active, game is focused, but no detections - keep moving
                     movement.resume()
+                prev_target_x = None
+                prev_target_time = None
+                velocity_x = 0.0
+                direction_history.clear()
+                locked_direction = 0
             
-            # Draw preview
-            if show_preview:
+            # FPS tracking (always, not just when preview is on)
+            fps = 1 / (time.perf_counter() - loop_start) if (time.perf_counter() - loop_start) > 0 else 0
+            fps_list.append(fps)
+            if len(fps_list) > 30:
+                fps_list.pop(0)
+            avg_fps = sum(fps_list) / len(fps_list)
+
+            # Draw preview (only every 3 frames to avoid waitKey overhead)
+            preview_frame_counter += 1
+            if show_preview and preview_frame_counter % 3 == 0:
                 display = frame.copy()
                 
                 # Draw crosshair
@@ -159,7 +229,7 @@ def run_bot(
                 # Draw detections
                 for det in detections:
                     x1, y1, x2, y2, conf, cls_id = det
-                    color = (0, 0, 255) # Red for all enemies
+                    color = (0, 0, 255)
                     cv2.rectangle(display, (x1, y1), (x2, y2), color, 2)
                     label = f"{class_names[cls_id]}: {conf:.2f}"
                     cv2.putText(display, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
@@ -167,7 +237,7 @@ def run_bot(
                 # Draw status
                 if not game_focused:
                     status = "GAME NOT FOCUSED - BOT PAUSED"
-                    status_color = (0, 165, 255)  # Orange
+                    status_color = (0, 165, 255)
                 elif bot_state['active']:
                     status = "BOT ACTIVE (F6 to pause)"
                     status_color = (0, 255, 0)
@@ -175,14 +245,8 @@ def run_bot(
                     status = "BOT PAUSED (F6 to resume)"
                     status_color = (0, 0, 255)
                 cv2.putText(display, status, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2)
-                
-                # Calculate and show FPS
-                fps = 1 / (time.perf_counter() - loop_start) if (time.perf_counter() - loop_start) > 0 else 0
-                fps_list.append(fps)
-                if len(fps_list) > 30:
-                    fps_list.pop(0)
-                avg_fps = sum(fps_list) / len(fps_list)
                 cv2.putText(display, f"FPS: {avg_fps:.1f}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                cv2.putText(display, f"Capture: {capture_ms:.0f}ms | Infer: {infer_ms:.0f}ms", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 2)
                 
                 # Resize and show
                 if display.shape[1] > 1280:
@@ -190,15 +254,14 @@ def run_bot(
                     display = cv2.resize(display, None, fx=scale, fy=scale)
                 
                 cv2.imshow("CS2 Bot", display)
-            
-            # Handle key presses
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('q'):
-                break
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord('q'):
+                    break
     
     finally:
         hotkey.stop()
         movement.stop()
+        cleanup_camera()
         cv2.destroyAllWindows()
         print("\nBot stopped.")
 

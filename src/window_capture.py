@@ -1,12 +1,15 @@
 """
 Window capture utilities for CS2 Bot
-Handles window detection and screen capture
+Uses mss for fast BitBlt-based screen capture
 """
 
 import numpy as np
+import cv2
 import win32gui
-import win32ui
-import ctypes
+import mss
+
+# Reusable mss instance
+_sct = mss.mss()
 
 
 def find_window(window_title: str):
@@ -24,43 +27,34 @@ def find_window(window_title: str):
 
 
 def capture_window(hwnd):
-    """Capture a specific window by handle."""
-    left, top, right, bottom = win32gui.GetClientRect(hwnd)
-    width = right - left
-    height = bottom - top
-    
-    if width == 0 or height == 0:
-        return None, 0, 0
-    
-    hwnd_dc = win32gui.GetWindowDC(hwnd)
-    mfc_dc = win32ui.CreateDCFromHandle(hwnd_dc)
-    save_dc = mfc_dc.CreateCompatibleDC()
-    
-    bitmap = win32ui.CreateBitmap()
-    bitmap.CreateCompatibleBitmap(mfc_dc, width, height)
-    save_dc.SelectObject(bitmap)
-    
-    ctypes.windll.user32.PrintWindow(hwnd, save_dc.GetSafeHdc(), 3)
-    
-    bmp_info = bitmap.GetInfo()
-    bmp_str = bitmap.GetBitmapBits(True)
-    frame = np.frombuffer(bmp_str, dtype=np.uint8)
-    frame = frame.reshape((bmp_info['bmHeight'], bmp_info['bmWidth'], 4))
-    
-    # Cleanup
+    """Capture a specific window by handle using mss."""
     try:
-        win32gui.DeleteObject(bitmap.GetHandle())
-        save_dc.DeleteDC()
-        mfc_dc.DeleteDC()
+        rect = win32gui.GetClientRect(hwnd)
+        point = win32gui.ClientToScreen(hwnd, (rect[0], rect[1]))
+        width = rect[2] - rect[0]
+        height = rect[3] - rect[1]
+        
+        if width == 0 or height == 0:
+            return None, 0, 0
+        
+        left, top = point
+        monitor = {"left": left, "top": top, "width": width, "height": height}
+        
+        frame = np.array(_sct.grab(monitor))
+        # mss returns BGRA, convert to BGR
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+        
+        return frame, width, height
+    except Exception:
+        return None, 0, 0
+
+
+def cleanup_camera():
+    """Close the mss instance."""
+    try:
+        _sct.close()
     except Exception:
         pass
-    finally:
-        win32gui.ReleaseDC(hwnd, hwnd_dc)
-    
-    import cv2
-    frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
-    
-    return frame, width, height
 
 
 def is_game_focused(window_title: str) -> bool:
