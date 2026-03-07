@@ -6,6 +6,7 @@ mp_roundtime_hostage 60;
 mp_freezetime 0;
 buddha true;
 sv_regeneration_force_on true;
+bind mouse1 +attack; cl_removedecals
 mp_restartgame 1;
 
 

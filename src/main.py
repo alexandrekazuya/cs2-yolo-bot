@@ -91,8 +91,8 @@ def run_bot(
     MIN_VELOCITY = 50
     direction_history = []  # Track velocity direction to detect oscillation
     locked_direction = 0  # Locked prediction direction (+1/-1/0)
-    CONSISTENCY_FRAMES = 5  # Require N consistent direction frames before predicting
-    PREDICTION_RADIUS = 70
+    CONSISTENCY_FRAMES = 10  # Require N consistent direction frames before predicting
+    PREDICTION_RADIUS = 100
 
     try:
         while True:
