@@ -1,5 +1,7 @@
 # CS2 YOLO Enemy Detection
 
+![bot-demonstration-ezgif com-optimize](https://github.com/user-attachments/assets/1c2fc8d7-d22a-4b4d-b5f7-220d6e07464b)
+
 Real-time enemy detection for **Counter-Strike 2** using the YOLO object
 detection architecture.
 
